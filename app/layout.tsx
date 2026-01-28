@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cloud Notepad",
+  title: "Fab Notepad",
   description: "A simple cloud notepad",
   icons: {
     icon: "/notes_favicon.png",

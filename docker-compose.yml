@@ -1,0 +1,22 @@
+
+networks:
+  caddy_network:
+    external: true
+
+services:
+  notepad:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notepad_app
+    restart: unless-stopped
+    networks:
+      - caddy_network
+    environment:
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
+    labels:
+      caddy: notepad.haguma.com
+      caddy.reverse_proxy: "{{upstreams 3000}}"
