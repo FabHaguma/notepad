@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import NoteItem from './components/NoteItem';
 
 type Note = {
@@ -56,6 +57,7 @@ export default function Home() {
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   
   // Master Config State
   const [masterConfig, setMasterConfig] = useState<{ 
@@ -408,7 +410,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100 font-sans text-gray-900 relative">
+    <div className="flex h-screen bg-gray-100 text-gray-900 relative">
       {/* Add Category Modal */}
       {isAddingCategory && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -473,11 +475,20 @@ export default function Home() {
       )}
 
       {/* Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10">
+      <div className={`${isSidebarOpen ? 'w-80 opacity-100' : 'w-0 opacity-0'} bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 transition-all duration-300 overflow-hidden whitespace-nowrap`}>
         <div className="p-6 border-b border-gray-100">
-          <h1 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <span className="text-blue-600">📝</span> Cloud Notepad
-          </h1>
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <Image src="/notes.png" alt="App Logo" width={32} height={32} className="object-contain" /> Fab Notepad
+            </h1>
+            <button 
+              onClick={() => setIsSidebarOpen(false)}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Close Sidebar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+            </button>
+          </div>
           <button
             onClick={createNote}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-lg transition shadow-sm flex items-center justify-center gap-2"
@@ -537,10 +548,20 @@ export default function Home() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+      <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden relative">
+        {!isSidebarOpen && (
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="absolute top-2 left-2 z-50 p-2 bg-white text-gray-500 hover:text-blue-600 shadow-sm rounded-lg border border-gray-200 hover:bg-gray-50 transition-all"
+              title="Expand Sidebar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+            </button>
+        )}
+
         {/* Open Notes Tabs */}
         {openNotes.length > 0 && (
-          <div className="flex bg-white border-b border-gray-200 px-2 pt-2 gap-2 overflow-x-auto shrink-0 scrollbar-hide">
+          <div className={`flex bg-white border-b border-gray-200 px-2 pt-2 gap-2 overflow-x-auto shrink-0 scrollbar-hide ${!isSidebarOpen ? 'pl-14' : ''}`}>
             {openNotes.map(note => (
               <div 
                 key={note.id} 
@@ -609,7 +630,7 @@ export default function Home() {
             </div>
             <div className="flex-1 p-8 overflow-hidden relative">
               <textarea
-                className="w-full h-full p-8 bg-white rounded-xl shadow-sm hover:shadow-md focus:shadow-md transition-shadow outline-none resize-none text-gray-800 leading-relaxed text-lg border border-gray-100"
+                className="w-full h-full p-8 bg-white rounded-xl shadow-sm hover:shadow-md focus:shadow-md transition-shadow outline-none resize-none text-gray-800 leading-relaxed text-[11pt] border border-gray-100 font-[Consolas,monospace]"
                 placeholder="Start typing your thoughts..."
                 value={isLoading ? '' : content}
                 onChange={(e) => handleContentChange(e.target.value)}
