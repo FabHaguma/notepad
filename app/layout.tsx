@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   title: "Fab Notepad",
   description: "A simple cloud notepad",
   icons: {
-    icon: "/notes_favicon.png",
-    shortcut: "/notes_favicon.png",
+    icon: "./notes_favicon.png",
+    shortcut: "./notes_favicon.png",
     apple: "/notes_favicon.png",
   },
 };
