@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import Image from 'next/image';
 import NoteItem from './components/NoteItem';
 
@@ -54,10 +55,12 @@ export default function Home() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [openNotes, setOpenNotes] = useState<OpenNote[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [activeNoteName, setActiveNoteName] = useState('');
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isViewMode, setIsViewMode] = useState(false);
   
   // Master Config State
   const [masterConfig, setMasterConfig] = useState<{ 
@@ -195,11 +198,16 @@ export default function Home() {
     const existing = openNotes.find(n => n.id === id);
     if (existing) {
         setActiveNoteId(id);
+        setActiveNoteName(existing.name);
+        setIsViewMode(false);
         setContent(existing.content);
         return;
     }
 
+    const noteName = notes.find(n => n.id === id)?.name || 'Untitled';
     setActiveNoteId(id);
+    setActiveNoteName(noteName);
+    setIsViewMode(false);
     setIsLoading(true);
     // Optimistic content clear
     setContent('');
@@ -235,25 +243,74 @@ export default function Home() {
       if (newOpen.length > 0) {
         const next = newOpen[newOpen.length - 1]; // Go to last one
         setActiveNoteId(next.id);
+        setActiveNoteName(next.name);
         setContent(next.content);
       } else {
         setActiveNoteId(null);
+        setActiveNoteName('');
         setContent('');
       }
     }
+  };
+
+  const handleRenameInConfig = async (oldName: string, newName: string) => {
+    // Check if any changes are needed
+    const isInPinned = masterConfig.pinned.includes(oldName);
+    const isInArchived = masterConfig.archived.includes(oldName);
+    let isInCategories = false;
+    
+    // Create new categories object if needed
+    const newCategories = { ...masterConfig.categories };
+    Object.keys(newCategories).forEach(cat => {
+      if (newCategories[cat].includes(oldName)) {
+        isInCategories = true;
+        newCategories[cat] = newCategories[cat].map(n => n === oldName ? newName : n);
+      }
+    });
+
+    if (!isInPinned && !isInArchived && !isInCategories) return;
+
+    const newConfig = {
+      ...masterConfig,
+      categories: newCategories
+    };
+
+    if (isInPinned) {
+      newConfig.pinned = masterConfig.pinned.map(n => n === oldName ? newName : n);
+    }
+    
+    if (isInArchived) {
+      newConfig.archived = masterConfig.archived.map(n => n === oldName ? newName : n);
+    }
+
+    await updateMasterConfig(newConfig);
   };
 
   const saveNote = async () => {
     if (!activeNoteId) return;
     setIsSaving(true);
     try {
+      // Check for rename
+      const currentNote = notes.find(n => n.id === activeNoteId);
+      if (currentNote && activeNoteName.trim() !== currentNote.name) {
+          const newName = activeNoteName.trim();
+          await fetch(`/api/notes/${activeNoteId}`, {
+             method: 'PATCH',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ name: newName }),
+          });
+          await handleRenameInConfig(currentNote.name, newName);
+      }
+
       await fetch(`/api/notes/${activeNoteId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       });
       
-      setOpenNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, isDirty: false } : n));
+      const newName = activeNoteName.trim();
+      setOpenNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, isDirty: false, name: newName } : n));
+      setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, name: newName, modifiedTime: new Date().toISOString() } : n));
 
       // Optionally refresh the list to update modified timestamps
       fetchNotes();
@@ -263,13 +320,14 @@ export default function Home() {
     } finally {
       setIsSaving(false);
     }
+
   };
 
-  const createNote = async () => {
+  const createNote = async (extension: 'txt' | 'md' = 'txt') => {
     // Generate name based on Date Time: Note_YYYY-MM-DD_HH-mm-ss.txt
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
-    const name = `Note_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.txt`;
+    const name = `Note_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.${extension}`;
 
     try {
       const res = await fetch('/api/notes', {
@@ -288,6 +346,7 @@ export default function Home() {
       
       setOpenNotes(prev => [...prev, { id: newNote.id, name: newNote.name, content: '', isDirty: false }]);
       setActiveNoteId(newNote.id);
+      setActiveNoteName(newNote.name);
       setContent('');
     } catch (error) {
       console.error('Failed to create note', error);
@@ -386,11 +445,14 @@ export default function Home() {
     
     // Ensure .txt extension if missing (optional but good practice)
     let finalName = newName.trim();
-    if (!finalName.toLowerCase().endsWith('.txt')) {
+    // Allow .txt or .md. If neither, append .txt
+    const lower = finalName.toLowerCase();
+    if (!lower.endsWith('.txt') && !lower.endsWith('.md')) {
       finalName += '.txt';
     }
 
     try {
+      const currentNote = notes.find(n => n.id === renameId);
       const res = await fetch(`/api/notes/${renameId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -398,6 +460,10 @@ export default function Home() {
       });
 
       if (!res.ok) throw new Error('Failed to rename');
+
+      if (currentNote) {
+         await handleRenameInConfig(currentNote.name, finalName);
+      }
 
       setNotes(notes.map(n => n.id === renameId ? { ...n, name: finalName } : n));
       setOpenNotes(prev => prev.map(n => n.id === renameId ? { ...n, name: finalName } : n));
@@ -489,12 +555,22 @@ export default function Home() {
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
             </button>
           </div>
-          <button
-            onClick={createNote}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-lg transition shadow-sm flex items-center justify-center gap-2"
-          >
-            <span>+</span> Create New Note
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => createNote('txt')}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-2 rounded-lg transition shadow-sm flex items-center justify-center gap-1 text-sm"
+              title="Create Text Note"
+            >
+              <span>+</span> Text Note
+            </button>
+            <button
+              onClick={() => createNote('md')}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-2 rounded-lg transition shadow-sm flex items-center justify-center gap-1 text-sm"
+              title="Create Markdown Note"
+            >
+              <span>+</span> MD Note
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">Library</h3>
@@ -598,44 +674,68 @@ export default function Home() {
                   ←
                 </button>
                 <div className="flex flex-col">
-                  <span className="font-semibold text-gray-800 text-lg line-clamp-1">
-                    {notes.find(n => n.id === activeNoteId)?.name}
-                  </span>
-                  <span className="text-xs text-gray-400">
+                  <input
+                    type="text"
+                    value={activeNoteName}
+                    onChange={(e) => setActiveNoteName(e.target.value)}
+                    className="font-semibold text-gray-800 text-lg bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none transition-colors w-full min-w-[200px]"
+                    placeholder="Note Title" 
+                  />
+                  <span className="text-xs text-gray-400 px-1">
                     {isSaving ? 'Saving changes...' : 'Ready to edit'}
                   </span>
                 </div>
               </div>
-              <button
-                onClick={saveNote}
-                disabled={isSaving || isLoading}
-                className={`flex items-center gap-2 font-medium px-6 py-2 rounded-lg transition-all ${
-                  isSaving 
-                    ? 'bg-green-100 text-green-700 cursor-wait' 
-                    : 'bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow active:scale-95'
-                }`}
-              >
-                {isSaving ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  <>💾 Save Content</>
+              <div className="flex gap-2">
+                {activeNoteName.toLowerCase().endsWith('.md') && (
+                  <button
+                    onClick={() => setIsViewMode(!isViewMode)}
+                    className={`flex items-center gap-2 font-medium px-4 py-2 rounded-lg transition-all ${
+                      isViewMode 
+                        ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                        : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {isViewMode ? '✎ Edit' : '👁 Preview'}
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={saveNote}
+                  disabled={isSaving || isLoading}
+                  className={`flex items-center gap-2 font-medium px-6 py-2 rounded-lg transition-all ${
+                    isSaving 
+                      ? 'bg-green-100 text-green-700 cursor-wait' 
+                      : 'bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow active:scale-95'
+                  }`}
+                >
+                  {isSaving ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving...
+                    </>
+                  ) : (
+                    <>💾 Save Content</>
+                  )}
+                </button>
+              </div>
             </div>
             <div className="flex-1 p-8 overflow-hidden relative">
-              <textarea
-                className="w-full h-full p-8 bg-white rounded-xl shadow-sm hover:shadow-md focus:shadow-md transition-shadow outline-none resize-none text-gray-800 leading-relaxed text-[11pt] border border-gray-100 font-[Consolas,monospace]"
-                placeholder="Start typing your thoughts..."
-                value={isLoading ? '' : content}
-                onChange={(e) => handleContentChange(e.target.value)}
-                disabled={isLoading}
-              />
+              {isViewMode ? (
+                <div className="w-full h-full p-8 bg-white rounded-xl shadow-sm overflow-y-auto prose prose-slate max-w-none border border-gray-100">
+                  <ReactMarkdown>{content}</ReactMarkdown>
+                </div>
+              ) : (
+                <textarea
+                  className="w-full h-full p-8 bg-white rounded-xl shadow-sm hover:shadow-md focus:shadow-md transition-shadow outline-none resize-none text-gray-800 leading-relaxed text-[11pt] border border-gray-100 font-[Consolas,monospace]"
+                  placeholder="Start typing your thoughts..."
+                  value={isLoading ? '' : content}
+                  onChange={(e) => handleContentChange(e.target.value)}
+                  disabled={isLoading}
+                />
+              )}
               {isLoading && (
                  <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-10">
                    <div className="flex flex-col items-center gap-3 text-gray-500">
