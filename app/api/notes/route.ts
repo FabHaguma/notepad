@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDriveClient } from '@/app/lib/drive';
 
+export const dynamic = 'force-dynamic';
+
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
 export async function GET() {
