@@ -26,6 +26,7 @@ const rl = readline.createInterface({
 const authorizationUrl = oauth2Client.generateAuthUrl({
   access_type: 'offline', // Crucial for Refresh Token
   scope: ['https://www.googleapis.com/auth/drive'],
+  prompt: 'consent',
 });
 
 console.log('\nPlease visit this URL to authorize the app:');
